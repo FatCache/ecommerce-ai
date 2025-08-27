@@ -1,0 +1,12 @@
+# Ignore datasets directory
+datasets/
+
+# Ignore ChromaDB persistent storage
+chromadbs/
+
+# Ignore Python cache
+__pycache__/
+
+# Ignore environment files
+.venv
+
