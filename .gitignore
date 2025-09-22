@@ -9,4 +9,5 @@ __pycache__/
 
 # Ignore environment files
 .venv
-
+.venv-npu
+models/
