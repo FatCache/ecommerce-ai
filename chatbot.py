@@ -254,8 +254,6 @@ def start_chat():
                             if convo.last.usage_metadata:
                                 print(f"Token Usage (Post-RAG DISPLAY): Prompt={convo.last.usage_metadata.prompt_token_count}, Completion={convo.last.usage_metadata.candidates_token_count}")
 
-                            # Removed break here to allow the outer loop to continue and prompt for user input for refinement.
-                            # break # Successfully processed, exit retry loop
 
                         elif action_after_rag == 'SUMMARIZE':
                             text_to_summarize = parameters_after_rag.get('text_to_summarize')
@@ -266,14 +264,13 @@ def start_chat():
                             break # Exit retry loop on unknown action after RAG
 
                     except yaml.YAMLError as ye_rag:
-                        print(f"Error parsing YAML response after RAG: {ye_rag}")
-                        print(f"Raw Gemini Response (after RAG):\n{gemini_response_after_rag}")
-                        # This specific error should not trigger a full retry loop for the *initial* query,
-                        # but rather indicate an issue with Gemini's response post-RAG.
-                        # For now, we'll just break. A more robust solution might involve a separate retry for this step.
+                        print(f"I'm sorry, I encountered an issue processing the information after a search. Please try rephrasing your request.")
+                        print(f"Internal error details: {ye_rag}") # Keep internal details for debugging if needed, but prioritize user message
+                        # print(f"Raw Gemini Response (after RAG):\n{gemini_response_after_rag}") # Optionally keep this for debugging
                         break
                     except Exception as ex_rag:
-                        print(f"Error processing Gemini response after RAG: {ex_rag}")
+                        print(f"I'm sorry, an unexpected error occurred while processing your request. Please try again.")
+                        print(f"Internal error details: {ex_rag}") # Optionally keep for debugging
                         break
 
                 elif action == 'DISPLAY':
@@ -297,8 +294,6 @@ def start_chat():
                     if convo.last.usage_metadata:
                         print(f"Token Usage (DISPLAY): Prompt={convo.last.usage_metadata.prompt_token_count}, Completion={convo.last.usage_metadata.candidates_token_count}")
 
-                    # Removed break here to allow the outer loop to continue and prompt for user input for refinement.
-                    # break # Successfully processed, exit retry loop
 
                 elif action == 'SUMMARIZE':
                     text_to_summarize = parameters.get('text_to_summarize')
@@ -327,11 +322,12 @@ def start_chat():
                 # Optionally, you could modify the prompt here to tell Gemini to be more careful with YAML.
                 # For simplicity, we're just retrying with the same prompt.
             except Exception as ex:
-                print(f"Error processing Gemini response: {ex}")
+                print(f"I'm sorry, an unexpected error occurred while processing your request. Please try again.")
+                print(f"Internal error details: {ex}") # Optionally keep for debugging
                 break # Exit retry loop on other exceptions
         
         if retry_count == max_retries:
-            print("Exiting chat due to persistent YAML parsing errors.")
+            print("I'm sorry, I'm having trouble processing your request right now. Please try again later.")
             break # Exit the main chat loop if max retries reached
 
 
