@@ -4,14 +4,16 @@
 
 This project implements an AI-powered e-commerce chatbot designed to provide product recommendations and information based on user queries. The chatbot leverages Google Gemini for natural language understanding and response generation, and a Retrieval-Augmented Generation (RAG) system using ChromaDB for accessing product metadata and reviews.
 
-The core idea is to structure the chatbot's responses in a YAML format, enabling it to perform specific actions like querying the RAG database, displaying information to the user, or summarizing retrieved data.
+The chatbot uses Gemini's `system_instruction` to define its role and behavior, and relies on the model's built-in conversation history management to maintain context across interactions without manual prompt concatenation. Response generation follows a structured YAML format, enabling explicit actions like querying the RAG database, displaying information to the user, or summarizing retrieved data.
 
 ## Current Chatbot Functionality
 
-The chatbot currently provides an interactive command-line interface where users can ask questions about e-commerce products. It uses the Gemini model to understand user intent and generate structured YAML responses. Based on these YAML instructions, the chatbot can:
-*   **Query** a ChromaDB vector store for relevant product metadata or reviews.
-*   **Display** information directly to the user, including product details and contextual snippets from customer reviews to explain positive experiences.
-*   **Summarize** (currently prints a request for summarization) complex information, setting the stage for future advanced summarization capabilities.
+The chatbot provides an interactive command-line interface where users can engage in natural conversations about e-commerce products. It leverages Gemini's chat session capabilities to automatically maintain conversation history, eliminating the need to manually pass prior context with each prompt.
+
+Using a detailed `system_instruction` prompt ([`prompts.py`](prompts.py)), Gemini generates structured YAML responses to determine appropriate actions. Based on these instructions, the chatbot can:
+*   **Query** ChromaDB vector stores for relevant product metadata or reviews.
+*   **Display** information to the user, including product details and contextual snippets from customer reviews.
+*   **Summarize** (currently prints a request for summarization) complex information, with potential for advanced summarization.
 
 ## Enhanced RAG Query Strategies
 
@@ -49,8 +51,10 @@ This project utilizes exactly two collections within ChromaDB for storing and re
 
 ## Features
 
+*   **Conversation History Management:** Gemini's chat session automatically maintains context across interactions, allowing natural, multi-turn conversations without manual history concatenation.
+*   **System Instruction Guidance:** Uses a comprehensive `system_instruction` ([`prompts.py`](prompts.py)) to define chatbot behavior, available actions, and RAG strategies.
 *   **Interactive Chat Loop:** Engages users in a continuous conversation for product discovery.
-*   **YAML Structured Responses:** Gemini generates responses in a structured YAML format, defining explicit actions and parameters.
+*   **YAML Structured Responses:** Gemini generates responses in a structured YAML format, defining explicit actions and parameters:
     *   `QUERY`: Initiates a search on the ChromaDB RAG database.
     *   `DISPLAY`: Presents information or asks clarifying questions to the user.
     *   `SUMMARIZE`: (Placeholder) Intended for summarizing extensive RAG results.
@@ -58,7 +62,8 @@ This project utilizes exactly two collections within ChromaDB for storing and re
     *   `product_meta`: For general product information (title, category, price, description).
     *   `product_review`: For detailed product reviews.
 *   **Contextual Snippets:** When displaying product recommendations or positive experiences, the chatbot includes relevant snippets from raw RAG data to explain the rationale.
-*   **Modular Configuration:** Gemini-specific configurations are externalized into `gemini_config.py` for better code organization and maintainability.
+*   **Iterative RAG:** Supports query refinement by prompting users for additional details when initial results are insufficient.
+*   **Modular Configuration:** Gemini-specific configurations (including generation parameters, safety settings, and system instruction) are externalized into `gemini_config.py`.
 *   **Token Usage Display:** Provides insights into resource consumption by displaying prompt and completion token counts for each Gemini response.
 *   **Cost-Optimized Summarization:** Employs a cheaper Gemini model for summarization tasks.
 *   **Robust Error Handling:** Includes a retry mechanism for YAML parsing failures and graceful exit on persistent errors.
@@ -125,6 +130,5 @@ ecommerce-ai/
 
 ## Future Enhancements / TODOs
 
-*   Implement full summarization logic using Gemini for the `SUMMARIZE` action.
-*   Add more sophisticated query refinement mechanisms based on user feedback.
-*   Integrate a more robust error handling and logging system.
+*   use Gemini `tool` to get rid of YAML way to call internal functions
+*   implement 'producer consumer' style to rebuilt chroma database
