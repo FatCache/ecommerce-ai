@@ -4,7 +4,6 @@ from chromadb.utils.batch_utils import create_batches
 import yaml
 from gemini_config import configure_gemini
 
-
 def _extract_yaml_from_markdown(text):
     """Extracts YAML content from a markdown code block."""
     if text.strip().startswith('```yaml'):
@@ -34,8 +33,8 @@ def get_chromadb():
 def start_chat():
     main_model, summarization_model = configure_gemini() # Get both models
     client, product_meta_collection, product_review_collection = get_chromadb()
-    
-    convo = main_model.start_chat(history=[]) # Use main_model for the conversation
+
+    convo = main_model.start_chat() # Use main_model for the conversation
 
     print("Welcome to the E-commerce Chatbot! How can I help you today? Type 'exit' to terminate session.")
 
@@ -45,7 +44,7 @@ def start_chat():
             print("Goodbye!")
             break
 
-        full_prompt = f"{context_prompt}\nUser: {user_input}\n"
+        full_prompt = user_input
         
         max_retries = 3
         retry_count = 0
@@ -80,12 +79,9 @@ def start_chat():
                         break # Exit retry loop on unknown collection
 
                     print(f"\nQuerying ChromaDB for: '{query_text}' in '{collection_name}'\n")
-                    results = collection.query(
-                        query_texts=[query_text],
-                        n_results=n_results
-                    )
-                    print("Query Results:")
-                    print(results)
+                    results = collection.query(query_texts=[query_text],n_results=n_results)
+                    ##print("Query Results:")
+                    ##print(results)
                     
                     # Now, send the RAG results back to Gemini for pre-processing and decision making
                     # This is the core of "Pre-processing RAG Results" and "Iterative RAG"
@@ -140,6 +136,9 @@ def start_chat():
                                 print(f"\nChatbot: {refinement_context}")
                                 # The loop will continue, and the next user_input will be used for a new query.
                                 break  # Exit retry loop on refinement
+                            else:
+                                # Successfully displayed results without needing refinement, exit retry loop
+                                break
 
                             # Display token usage for the DISPLAY action after RAG processing
                             if convo.last.usage_metadata:
@@ -220,7 +219,7 @@ def start_chat():
         
         if retry_count == max_retries:
             print("I'm sorry, I'm having trouble processing your request right now. Please try again later.")
-            break # Exit the main chat loop if max retries reached
+            # Continue to next user input instead of exiting
 
 
 if __name__ == "__main__":

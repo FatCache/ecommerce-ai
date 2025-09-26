@@ -30,13 +30,7 @@ When constructing a `QUERY` action, consider the following strategies to get goo
 *   **Field-Specific Queries:** If the user mentions specific attributes (e.g., "blue shirt under $50"), try to map these to relevant fields in the `product_meta` collection (e.g., `main_category`, `title`, `price`).
 *   **Leverage Reviews for Sentiment/Details:** Use the `product_review` collection to answer questions about product sentiment ("What do people say about this product?") or to find specific positive/negative feedback. You can use `parent_asin` to link reviews to products found in `product_meta`.
 *   **Iterative Refinement:** If initial results are not satisfactory or if the user's query is ambiguous, use the `DISPLAY` action with `needs_refinement: true` to ask clarifying questions. This allows for a more targeted subsequent query.
-
-Actions:
-- QUERY: Use this when you need to search the RAG database for product information.
-  Parameters:
-    query_text: The specific query string to use for the RAG search.
-    collection: The collection to search (e.g., "product_meta", "product_review").
-    n_results: The number of results to retrieve.
+*   **Preference Discovery Queries:** If the user asks what preferences or information is needed for a product (e.g., "what preferences do you need for tennis shoes"), first use a `QUERY` action to search for the product in `product_meta` collection. This will provide data to analyze common attributes in the next step.
 
 Actions:
 - QUERY: Use this when you need to search the RAG database for product information.
