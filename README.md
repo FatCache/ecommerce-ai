@@ -62,7 +62,7 @@ Main Function:
 
 This design improves readability by separating concerns, reducing code duplication, and following Python best practices like encapsulation and single responsibility.
 
-Using a detailed `system_instruction` prompt ([`prompts.py`](prompts.py)), Gemini generates structured YAML responses to determine appropriate actions. Based on these instructions, the chatbot can:
+Using a detailed `system_instruction` prompt ([`context_prompt.py`](context_prompt.py)), Gemini generates structured YAML responses to determine appropriate actions. Based on these instructions, the chatbot can:
 *   **Query** ChromaDB vector stores for relevant product metadata or reviews.
 *   **Display** information to the user, including product details and contextual snippets from customer reviews.
 *   **Summarize** (currently prints a request for summarization) complex information, with potential for advanced summarization.
@@ -104,7 +104,7 @@ This project utilizes exactly two collections within ChromaDB for storing and re
 ## Features
 
 *   **Conversation History Management:** Gemini's chat session automatically maintains context across interactions, allowing natural, multi-turn conversations without manual history concatenation.
-*   **System Instruction Guidance:** Uses a comprehensive `system_instruction` ([`prompts.py`](prompts.py)) to define chatbot behavior, available actions, and RAG strategies.
+*   **System Instruction Guidance:** Uses a comprehensive `system_instruction` ([`context_prompt.py`](context_prompt.py)) to define chatbot behavior, available actions, and RAG strategies.
 *   **Interactive Chat Loop:** Engages users in a continuous conversation for product discovery.
 *   **YAML Structured Responses:** Gemini generates responses in a structured YAML format, defining explicit actions and parameters:
     *   `QUERY`: Initiates a search on the ChromaDB RAG database.
@@ -202,7 +202,7 @@ Tests can be run in CI/CD pipelines and will skip integration tests if ChromaDB 
     *(Note: It's recommended to use environment variables for API keys in production environments.)*
 
 5.  **Prepare ChromaDB (if not already done):**
-    Ensure your ChromaDB collections (`product_meta` and `product_review`) are populated with data. Refer to `data-processor-exp.py` or `dataset-processor.py` for data ingestion examples. The database files are expected to be in `./chromadbs/chromadb_v1/`.
+    Ensure your ChromaDB collections (`product_meta` and `product_review`) are populated with data. Refer to `chroma_db_processor/build_vector_db_cpu.py` and `chroma_db_processor/build_vector_db_gpu.py` for data ingestion examples. The database files are expected to be in `./chromadbs/chromadb_v1/`.
 
 ## How to Run the Chatbot
 
@@ -317,6 +317,44 @@ loop until user exits
 end
 
 Chatbot -> User: Goodbye
+@enduml
+```
+
+### Vector DB Population Pipeline (GPU Optimized)
+```plantuml
+@startuml Vector DB Population Pipeline
+title GPU-Optimized Vector Database Population Pipeline
+
+partition "File Reading (CPU)" as Producers {
+  (*) --> "Producer-Reviews\nRead JSONL file in batches"
+  --> "Put to Job Queue"
+  --> "Producer-Meta\nRead JSONL file in batches"
+  --> "Put to Job Queue"
+  --> (*)
+}
+
+partition "Encoding (GPU)" as Encoder {
+  "Job Queue" --> "Collect 10 batches\n(100k docs)"
+  --> "Batch Encode\nSentenceTransformers (GPU)"
+  --> "Route to Insert Queues"
+  --> "Job Queue"
+}
+
+partition "Database Insertion (I/O)" as Inserters {
+  "Insert Queue Reviews" --> "Upsert to ChromaDB\nReviews Collection"
+  --> "Insert Queue Reviews"
+
+  "Insert Queue Meta" --> "Upsert to ChromaDB\nMeta Collection"
+  --> "Insert Queue Meta"
+}
+
+note right
+  **Parallel Processing:**
+  - Producers: I/O bound
+  - Encoder: GPU compute bound
+  - Inserters: Disk I/O bound
+  **Queues enable overlapping operations**
+end note
 @enduml
 ```
 
