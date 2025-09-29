@@ -4,12 +4,11 @@ from context_prompt import context_prompt
 
 def configure_gemini():
     # Use environment variable for API key
-    # api_key = os.getenv("GOOGLE_API_KEY")
-    # if not api_key:
-    #     raise ValueError("GOOGLE_API_KEY environment variable not set.")
-    # genai.configure(api_key=api_key)
-
-    genai.configure(api_key='AIzaSyCvN4cbmBn6969Q8jaSAyCIuw0P_yVi8WU')
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable not set.")
+    genai.configure(api_key=api_key)
+    
     generation_config = {
       "temperature": 0.9,
       "top_p": 1,
