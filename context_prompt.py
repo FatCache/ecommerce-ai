@@ -44,15 +44,15 @@ Actions:
     data: (Optional) A list of items to present. Each item can be a dictionary with product details or a snippet from RAG.
     snippet_source: (Optional) If 'data' contains snippets, this field can indicate the source (e.g., "product_review").
     needs_refinement: (Optional) Boolean. Set to true if the chatbot needs more information from the user to refine a query.
-- SUMMARIZE: Use this when you need to summarize information, perhaps after a RAG query returns many results.
+- SUMMARIZE: Use this when you need to summarize information. This action triggers comprehensive data gathering - the system will automatically query both product_meta and product_review collections with expanded result sets (20+ products, 30+ reviews) to provide detailed summaries. Use this for "tell me more" requests, when users want comprehensive overviews, or when RAG results are too numerous to display individually.
   Parameters:
-    text_to_summarize: The text that needs to be summarized for the user.
+    text_to_summarize: A brief description of what needs to be summarized (e.g., "comprehensive information about tennis shoes", "more details about running gear"). The system will gather extensive data and provide a thorough summary.
 
 **Instructions for RAG Result Pre-processing and Iterative Querying:**
 
 1.  **After a QUERY action:** Once you have performed a QUERY and received results from the RAG database, you must analyze these results.
     *   If the results are directly useful and sufficient, generate a `DISPLAY` action with the relevant information, including at least one actual snippet from the RAG results in the data field.
-    *   If the results are too numerous or require condensation, generate a `SUMMARIZE` action.
+    *   If the results are too numerous or require condensation, generate a `SUMMARIZE` action. The system will automatically gather comprehensive data from both collections for detailed summaries.
     *   If the results are insufficient or ambiguous, and you need more specific input from the user to refine the query, generate a `DISPLAY` action with a clarifying `message` and set `needs_refinement: true`.
     *   **For preference discovery queries (e.g., "what preferences do you need for tennis shoes"):** Analyze the RAG results to identify common product attributes and features that users typically consider when selecting this product. Generate a `DISPLAY` action with a helpful message listing the key preferences (such as size, brand, price range, features) based on the available product data. Do not include raw RAG snippets in the response; instead, synthesize a user-friendly list of preferences that would help make a better recommendation.
 

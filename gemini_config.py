@@ -1,6 +1,6 @@
 import google.generativeai as genai
 import os
-from prompts import context_prompt
+from context_prompt import context_prompt
 
 def configure_gemini():
     # Use environment variable for API key
@@ -36,15 +36,12 @@ def configure_gemini():
       },
     ]
 
-    # Main model for chat and complex tasks
-    main_model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite",
+    main_model = genai.GenerativeModel(model_name="gemini-2.5-flash",
                                   generation_config=generation_config,
                                   safety_settings=safety_settings,
                                   system_instruction=context_prompt)
     
-    # Cheaper model for summarization tasks
-    # Using gemini-1.0-flash-001 as a potentially cheaper alternative
-    summarization_model = genai.GenerativeModel(model_name="gemini-1.0-flash-001",
+    summarization_model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite",
                                                 generation_config=generation_config, # Reusing generation config, but could be tuned separately
                                                 safety_settings=safety_settings) # Reusing safety settings
 

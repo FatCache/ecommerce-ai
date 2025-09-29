@@ -10,6 +10,58 @@ The chatbot uses Gemini's `system_instruction` to define its role and behavior, 
 
 The chatbot provides an interactive command-line interface where users can engage in natural conversations about e-commerce products. It leverages Gemini's chat session capabilities to automatically maintain conversation history, eliminating the need to manually pass prior context with each prompt.
 
+## Chatbot Pseudo Code
+
+The refactored `chatbot.py` follows an object-oriented design with the following high-level structure:
+
+```
+Constants:
+- PRODUCT_META_COLLECTION = "product_meta"
+- PRODUCT_REVIEW_COLLECTION = "product_review"
+- MAX_RETRIES = 3
+- EXIT_COMMAND = "exit"
+
+Helper Functions:
+- parse_yaml_response(gemini_response): Parse YAML from AI response
+- display_token_usage(metadata, label): Display API usage stats
+- display_results(message, data, snippet_source, needs_refinement): Format and display chatbot responses
+
+Class: EcommerceChatbot
+    __init__():
+        Initialize Gemini models and ChromaDB collections
+        Start conversation session
+
+    get_collection(collection_name):
+        Return appropriate ChromaDB collection
+
+    handle_query_action(parameters, user_input):
+        Process QUERY action with RAG retrieval
+        Send results back to Gemini for post-processing
+        Handle DISPLAY/SUMMARIZE responses
+
+    handle_display_action(parameters):
+        Display information to user
+        Handle refinement requests
+
+    handle_summarize_action(parameters):
+        Use cheaper model for summarization
+
+    process_user_input(user_input):
+        Send input to Gemini and parse YAML response
+        Route to appropriate action handler
+        Retry on YAML parsing errors
+
+    start_chat():
+        Main chat loop
+        Handle user input and exit commands
+
+Main Function:
+    start_chat():
+        Create EcommerceChatbot instance and start chat
+```
+
+This design improves readability by separating concerns, reducing code duplication, and following Python best practices like encapsulation and single responsibility.
+
 Using a detailed `system_instruction` prompt ([`prompts.py`](prompts.py)), Gemini generates structured YAML responses to determine appropriate actions. Based on these instructions, the chatbot can:
 *   **Query** ChromaDB vector stores for relevant product metadata or reviews.
 *   **Display** information to the user, including product details and contextual snippets from customer reviews.
@@ -63,10 +115,11 @@ This project utilizes exactly two collections within ChromaDB for storing and re
     *   `product_review`: For detailed product reviews.
 *   **Contextual Snippets:** When displaying product recommendations or positive experiences, the chatbot includes relevant snippets from raw RAG data to explain the rationale.
 *   **Iterative RAG:** Supports query refinement by prompting users for additional details when initial results are insufficient.
+*   **Intelligent Summarization:** SUMMARIZE actions use AI classification to detect requests for comprehensive information (like "tell me more about X" or "what else can you tell me"), automatically gathering extensive data from both product collections (20+ products, 30+ reviews) and providing concise, conversational summaries in 3-4 sentences maximum.
 *   **Modular Configuration:** Gemini-specific configurations (including generation parameters, safety settings, and system instruction) are externalized into `gemini_config.py`.
-*   **Token Usage Display:** Provides insights into resource consumption by displaying prompt and completion token counts for each Gemini response.
+*   **Token Usage Display:** Provides insights into resource consumption by displaying prompt and completion token counts for each Gemini response (debug mode).
 *   **Cost-Optimized Summarization:** Employs a cheaper Gemini model for summarization tasks.
-*   **Robust Error Handling:** Includes a retry mechanism for YAML parsing failures and graceful exit on persistent errors.
+*   **Robust Error Handling:** Includes a retry mechanism for YAML parsing failures, graceful fallback parsing for malformed responses, and user-friendly error messages.
 
 ## Setup and Installation
 
@@ -90,6 +143,57 @@ This project utilizes exactly two collections within ChromaDB for storing and re
     pip install -r requirements.txt
     ```
 
+## Testing
+
+The project includes comprehensive tests using pytest. Tests are organized in the `tests/` directory following Python testing best practices.
+
+### Running Tests
+
+**Run all tests:**
+```bash
+pytest
+```
+
+**Run tests with coverage:**
+```bash
+pytest --cov=. --cov-report=html
+```
+
+**Run specific test categories:**
+```bash
+# Unit tests only (no external dependencies)
+pytest -m "not integration"
+
+# Integration tests (require ChromaDB)
+pytest -m integration
+
+# Run specific test file
+pytest tests/test_chroma_db.py
+
+# Run with verbose output
+pytest -v
+```
+
+### Test Structure
+
+```
+tests/
+├── __init__.py              # Makes tests a package
+├── conftest.py              # Shared pytest fixtures
+├── test_chroma_db.py        # ChromaDB configuration tests
+└── test_chatbot.py          # Chatbot functionality tests
+```
+
+### Test Types
+
+- **Unit Tests**: Test individual functions and classes without external dependencies
+- **Integration Tests**: Test ChromaDB connectivity and real database operations (marked with `@pytest.mark.integration`)
+- **Configuration Tests**: Verify ChromaDB setup and collection availability
+
+### Continuous Integration
+
+Tests can be run in CI/CD pipelines and will skip integration tests if ChromaDB is not available.
+
 4.  **Configure Google Gemini API Key:**
     Open `ecommerce-ai/gemini_config.py` and replace `'AIzaSyCvN4cbmBn6969Q8jaSAyCIuw0P_yVi8WU'` with your actual Google Gemini API key.
     ```python
@@ -108,27 +212,160 @@ To start the chatbot, execute the `chatbot.py` script:
 python ecommerce-ai/chatbot.py
 ```
 
+For debug mode (shows detailed Gemini responses and token usage):
+
+```bash
+python ecommerce-ai/chatbot.py -d
+# or
+python ecommerce-ai/chatbot.py --debug
+```
+
 The chatbot will greet you, and you can start typing your queries. Type `exit` to end the chat.
+
+## Code Quality Improvements
+
+The codebase has been significantly improved with modern Python techniques:
+
+### **Type Safety & Structure**
+- **Enums**: `ActionType` and `CollectionType` enums for type-safe action and collection handling
+- **Data Classes**: Structured data classes (`GeminiResponse`, `QueryParameters`, `DisplayParameters`, `SummarizeParameters`) for better data organization
+- **Type Hints**: Comprehensive type annotations throughout the codebase
+- **Configuration Class**: Centralized configuration management with `ChatbotConfig`
+
+### **Error Handling**
+- **Custom Exceptions**: Specific exception classes (`ChatbotError`, `InvalidActionError`, `CollectionNotFoundError`, `GeminiAPIError`) for better error categorization
+- **Graceful Degradation**: Proper fallback mechanisms and user-friendly error messages
+
+### **Design Patterns**
+- **Strategy Pattern**: Action handler mapping for extensible action processing
+- **Protocol Classes**: Type-safe interfaces for action handlers
+- **Configuration Management**: Centralized settings management
+
+### **Testing Infrastructure**
+- **Comprehensive Test Suite**: Unit tests for all major components
+- **Integration Tests**: Database connectivity verification
+- **Test Fixtures**: Shared test setup and mocking
+- **CI/CD Ready**: Automated testing with coverage reporting
 
 ## Project Structure
 
 ```
 ecommerce-ai/
-├── chatbot.py              # Main chatbot logic, handles user interaction and action execution.
-├── data-processor-exp.py   # Example script for processing and ingesting data into ChromaDB.
-├── dataset-processor.py    # Another script for dataset processing.
-├── gemini_config.py        # Externalized Google Gemini API configuration and model setup.
-├── main.py                 # (Potentially) Main application entry point or other utility.
+├── chatbot.py              # Main chatbot logic with modern Python patterns (enums, dataclasses, type hints).
+├── context_prompt.py       # System prompts and instructions for Gemini AI.
+├── chroma_db_config.py     # ChromaDB connection and collection management.
+├── gemini_config.py        # Google Gemini API configuration and model setup.
+├── text_utils.py           # Text processing utilities for YAML extraction.
+├── run_tests.py            # Convenient test runner script with options.
+├── pytest.ini              # Pytest configuration and test settings.
+├── requirements.txt        # Python dependencies including testing tools.
 ├── README.md               # Project documentation.
-├── requirements.txt        # Python dependencies.
-├── server.py               # (Potentially) A FastAPI server for API endpoints.
-├── .venv/                  # Python virtual environment.
-└── chromadbs/
-    └── chromadb_v1/        # Persistent ChromaDB storage.
-        └── ...             # ChromaDB data files.
+├── tests/                  # Comprehensive test suite
+│   ├── __init__.py
+│   ├── conftest.py         # Shared test fixtures and configuration
+│   ├── test_chroma_db.py   # ChromaDB connectivity and configuration tests
+│   └── test_chatbot.py     # Chatbot functionality and utility tests
+├── chroma_db_processor/    # Data processing scripts for ChromaDB
+│   ├── build_vector_db_cpu.py
+│   └── build_vector_db_gpu.py
+└── chromadbs/              # Persistent ChromaDB storage
+    └── chromadb_v1/
+        └── ...             # ChromaDB data files
 ```
 
 ## Future Enhancements / TODOs
 
 *   use Gemini `tool` to get rid of YAML way to call internal functions
 *   implement 'producer consumer' style to rebuilt chroma database
+
+
+### Generates PlantUML Sequence Diagram
+```yaml
+@startuml Ecommerce Chatbot Sequence
+title E-commerce Chatbot Sequence Diagram
+
+actor User
+participant Chatbot
+participant Gemini
+database ChromaDB as "ChromaDB\nVector Database"
+
+== Initialization ==
+Chatbot -> Gemini: Initialize connection
+Chatbot -> ChromaDB: Initialize connection
+
+== Chat Session ==
+loop until user exits
+    User -> Chatbot: Send query
+    Chatbot -> Gemini: Process with conversation history
+    Gemini --> Chatbot: YAML action response
+    
+    alt QUERY Action
+        Chatbot -> ChromaDB: Semantic search query
+        ChromaDB --> Chatbot: Vector search results
+        Chatbot -> Gemini: Send RAG results for analysis
+        Gemini --> Chatbot: Refined response
+    else DISPLAY Action
+        Chatbot -> User: Show results
+        note right: May include refinement request
+    else SUMMARIZE Action
+        Chatbot -> Gemini: Summarization request
+        Gemini --> Chatbot: Summary
+        Chatbot -> User: Display summary
+    end
+    
+    User -> Chatbot: Next message or "exit"
+end
+
+Chatbot -> User: Goodbye
+@enduml
+```
+
+### Generates PLantUML Code Flow
+```yaml
+@startuml Ecommerce Chatbot Workflow
+title E-commerce Chatbot Workflow
+
+start
+:Initialize Chatbot
+Setup Gemini & ChromaDB connections;
+
+:Start Chat Loop;
+
+repeat
+    :Get User Input;
+    
+    if (input == "exit") then (yes)
+        :End Session;
+        stop
+    else (no)
+        :Send to Gemini AI Service;
+        :Parse YAML Response;
+        
+        switch (Action Type)
+        case (QUERY)
+            :Extract Query Parameters;
+            :**Query ChromaDB Database**
+            (External Vector Database);
+            :Perform Semantic Search;
+            :Retrieve Product Data;
+            :Send Results back to Gemini;
+            :Parse Refined Response;
+            
+        case (DISPLAY)
+            :Format & Display Results;
+            if (needs_refinement?) then (yes)
+                :Show Refinement Prompt
+                (ask user for more details);
+            endif
+            
+        case (SUMMARIZE)
+            :Call Summarization Model;
+            :Display Summary to User;
+            
+        endswitch
+    endif
+repeat while (continue chatting)
+
+@enduml
+```
+
