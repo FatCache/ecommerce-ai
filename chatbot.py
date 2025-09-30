@@ -1,86 +1,14 @@
 import yaml
 import argparse
-from enum import Enum
-from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Protocol, Union
 from gemini_config import configure_gemini
 from text_utils import extract_yaml_from_markdown
 from chroma_db_config import get_chromadb
-
-# Enums for type safety
-class ActionType(Enum):
-    """Enumeration of possible chatbot actions."""
-    QUERY = "QUERY"
-    DISPLAY = "DISPLAY"
-    SUMMARIZE = "SUMMARIZE"
+from exceptions import ChatbotError, InvalidActionError, CollectionNotFoundError, GeminiAPIError
+from models import ActionType, CollectionType, GeminiResponse, QueryParameters, DisplayParameters, SummarizeParameters, ChatbotConfig
 
 
-class CollectionType(Enum):
-    """Enumeration of available ChromaDB collections."""
-    PRODUCT_META = "product_meta"
-    PRODUCT_REVIEW = "product_review"
 
-
-# Data classes for structured data
-@dataclass
-class GeminiResponse:
-    """Structured representation of Gemini's YAML response."""
-    action: ActionType
-    parameters: Dict[str, Any]
-
-
-@dataclass
-class QueryParameters:
-    """Parameters for QUERY actions."""
-    query_text: str
-    collection: CollectionType
-    n_results: int = 5
-
-
-@dataclass
-class DisplayParameters:
-    """Parameters for DISPLAY actions."""
-    message: str
-    data: Optional[List[Any]] = None
-    snippet_source: Optional[str] = None
-    needs_refinement: bool = False
-
-
-@dataclass
-class SummarizeParameters:
-    """Parameters for SUMMARIZE actions."""
-    text_to_summarize: str
-
-
-@dataclass
-class ChatbotConfig:
-    """Configuration class for chatbot settings."""
-    max_retries: int = 3
-    exit_command: str = "exit"
-    default_query_results: int = 5
-    comprehensive_meta_results: int = 20
-    comprehensive_review_results: int = 30
-
-
-# Custom exceptions for better error handling
-class ChatbotError(Exception):
-    """Base exception for chatbot-related errors."""
-    pass
-
-
-class InvalidActionError(ChatbotError):
-    """Raised when an invalid action is encountered."""
-    pass
-
-
-class CollectionNotFoundError(ChatbotError):
-    """Raised when a requested collection is not found."""
-    pass
-
-
-class GeminiAPIError(ChatbotError):
-    """Raised when there's an error with Gemini API calls."""
-    pass
 
 
 # Protocol for action handlers (Strategy pattern)
