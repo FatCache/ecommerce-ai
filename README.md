@@ -6,6 +6,12 @@ This project implements an AI-powered e-commerce chatbot designed to provide pro
 
 The chatbot uses Gemini's `system_instruction` to define its role and behavior, and relies on the model's built-in conversation history management to maintain context across interactions without manual prompt concatenation. Response generation follows a structured YAML format, enabling explicit actions like querying the RAG database, displaying information to the user, or summarizing retrieved data.
 
+## Flow
+
+![Workflow](images/chatbot_workflow.png)
+
+![Chat Sequence Diagram](images/sequence_diagram.png)
+
 ## Current Chatbot Functionality
 
 The chatbot provides an interactive command-line interface where users can engage in natural conversations about e-commerce products. It leverages Gemini's chat session capabilities to automatically maintain conversation history, eliminating the need to manually pass prior context with each prompt.
@@ -59,8 +65,6 @@ Main Function:
     start_chat():
         Create EcommerceChatbot instance and start chat
 ```
-
-This design improves readability by separating concerns, reducing code duplication, and following Python best practices like encapsulation and single responsibility.
 
 Using a detailed `system_instruction` prompt ([`context_prompt.py`](context_prompt.py)), Gemini generates structured YAML responses to determine appropriate actions. Based on these instructions, the chatbot can:
 *   **Query** ChromaDB vector stores for relevant product metadata or reviews.
@@ -116,6 +120,8 @@ This project utilizes exactly two collections within ChromaDB for storing and re
 *   **Contextual Snippets:** When displaying product recommendations or positive experiences, the chatbot includes relevant snippets from raw RAG data to explain the rationale.
 *   **Iterative RAG:** Supports query refinement by prompting users for additional details when initial results are insufficient.
 *   **Intelligent Summarization:** SUMMARIZE actions use AI classification to detect requests for comprehensive information (like "tell me more about X" or "what else can you tell me"), automatically gathering extensive data from both product collections (20+ products, 30+ reviews) and providing concise, conversational summaries in 3-4 sentences maximum.
+*   **Preference Discovery:** Automatically identifies when DISPLAY responses contain user preference analyses (e.g., desired brands, price ranges, features) and suppresses refinement requests, improving conversational efficiency and user experience.
+*   **AI-Powered Request Classification:** Leverages Gemini to intelligently classify summarization requests as requiring comprehensive multi-collection data gathering versus standard single-text summaries, enabling dynamic and context-aware information retrieval.
 *   **Modular Configuration:** Gemini-specific configurations (including generation parameters, safety settings, and system instruction) are externalized into `gemini_config.py`.
 *   **Token Usage Display:** Provides insights into resource consumption by displaying prompt and completion token counts for each Gemini response (debug mode).
 *   **Cost-Optimized Summarization:** Employs a cheaper Gemini model for summarization tasks.
@@ -190,20 +196,6 @@ tests/
 - **Integration Tests**: Test ChromaDB connectivity and real database operations (marked with `@pytest.mark.integration`)
 - **Configuration Tests**: Verify ChromaDB setup and collection availability
 
-### Continuous Integration
-
-Tests can be run in CI/CD pipelines and will skip integration tests if ChromaDB is not available.
-
-4.  **Configure Google Gemini API Key:**
-    Open `ecommerce-ai/gemini_config.py` and replace `'AIzaSyCvN4cbmBn6969Q8jaSAyCIuw0P_yVi8WU'` with your actual Google Gemini API key.
-    ```python
-    genai.configure(api_key='YOUR_GOOGLE_API_KEY')
-    ```
-    *(Note: It's recommended to use environment variables for API keys in production environments.)*
-
-5.  **Prepare ChromaDB (if not already done):**
-    Ensure your ChromaDB collections (`product_meta` and `product_review`) are populated with data. Refer to `chroma_db_processor/build_vector_db_cpu.py` and `chroma_db_processor/build_vector_db_gpu.py` for data ingestion examples. The database files are expected to be in `./chromadbs/chromadb_v1/`.
-
 ## How to Run the Chatbot
 
 To start the chatbot, execute the `chatbot.py` script:
@@ -277,133 +269,3 @@ ecommerce-ai/
 
 *   use Gemini `tool` to get rid of YAML way to call internal functions
 *   implement 'producer consumer' style to rebuilt chroma database
-
-
-### Generates PlantUML Sequence Diagram
-```yaml
-@startuml Ecommerce Chatbot Sequence
-title E-commerce Chatbot Sequence Diagram
-
-actor User
-participant Chatbot
-participant Gemini
-database ChromaDB as "ChromaDB\nVector Database"
-
-== Initialization ==
-Chatbot -> Gemini: Initialize connection
-Chatbot -> ChromaDB: Initialize connection
-
-== Chat Session ==
-loop until user exits
-    User -> Chatbot: Send query
-    Chatbot -> Gemini: Process with conversation history
-    Gemini --> Chatbot: YAML action response
-    
-    alt QUERY Action
-        Chatbot -> ChromaDB: Semantic search query
-        ChromaDB --> Chatbot: Vector search results
-        Chatbot -> Gemini: Send RAG results for analysis
-        Gemini --> Chatbot: Refined response
-    else DISPLAY Action
-        Chatbot -> User: Show results
-        note right: May include refinement request
-    else SUMMARIZE Action
-        Chatbot -> Gemini: Summarization request
-        Gemini --> Chatbot: Summary
-        Chatbot -> User: Display summary
-    end
-    
-    User -> Chatbot: Next message or "exit"
-end
-
-Chatbot -> User: Goodbye
-@enduml
-```
-
-### Vector DB Population Pipeline (GPU Optimized)
-```plantuml
-@startuml Vector DB Population Pipeline
-title GPU-Optimized Vector Database Population Pipeline
-
-partition "File Reading (CPU)" as Producers {
-  (*) --> "Producer-Reviews\nRead JSONL file in batches"
-  --> "Put to Job Queue"
-  --> "Producer-Meta\nRead JSONL file in batches"
-  --> "Put to Job Queue"
-  --> (*)
-}
-
-partition "Encoding (GPU)" as Encoder {
-  "Job Queue" --> "Collect 10 batches\n(100k docs)"
-  --> "Batch Encode\nSentenceTransformers (GPU)"
-  --> "Route to Insert Queues"
-  --> "Job Queue"
-}
-
-partition "Database Insertion (I/O)" as Inserters {
-  "Insert Queue Reviews" --> "Upsert to ChromaDB\nReviews Collection"
-  --> "Insert Queue Reviews"
-
-  "Insert Queue Meta" --> "Upsert to ChromaDB\nMeta Collection"
-  --> "Insert Queue Meta"
-}
-
-note right
-  **Parallel Processing:**
-  - Producers: I/O bound
-  - Encoder: GPU compute bound
-  - Inserters: Disk I/O bound
-  **Queues enable overlapping operations**
-end note
-@enduml
-```
-
-### Generates PLantUML Code Flow
-```yaml
-@startuml Ecommerce Chatbot Workflow
-title E-commerce Chatbot Workflow
-
-start
-:Initialize Chatbot
-Setup Gemini & ChromaDB connections;
-
-:Start Chat Loop;
-
-repeat
-    :Get User Input;
-    
-    if (input == "exit") then (yes)
-        :End Session;
-        stop
-    else (no)
-        :Send to Gemini AI Service;
-        :Parse YAML Response;
-        
-        switch (Action Type)
-        case (QUERY)
-            :Extract Query Parameters;
-            :**Query ChromaDB Database**
-            (External Vector Database);
-            :Perform Semantic Search;
-            :Retrieve Product Data;
-            :Send Results back to Gemini;
-            :Parse Refined Response;
-            
-        case (DISPLAY)
-            :Format & Display Results;
-            if (needs_refinement?) then (yes)
-                :Show Refinement Prompt
-                (ask user for more details);
-            endif
-            
-        case (SUMMARIZE)
-            :Call Summarization Model;
-            :Display Summary to User;
-            
-        endswitch
-    endif
-repeat while (continue chatting)
-
-@enduml
-```
-
