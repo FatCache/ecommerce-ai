@@ -11,6 +11,14 @@ import json
 import time
 import logging
 
+# Check GPU availability
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA device count: {torch.cuda.device_count()}")
+    print(f"Current CUDA device: {torch.cuda.current_device()}")
+else:
+    print("CUDA not available, using CPU")
+
 # Constants
 CHROMA_DB_NAME = 'chromadb-exp-test'
 CHROMA_DB_DIR= f"../chromadbs/{CHROMA_DB_NAME}"
@@ -19,10 +27,21 @@ EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
 DATASET_REVIEW_FILE = '../datasets/Amazon_Fashion.jsonl'
 DATASET_META_FILE = '../datasets/meta_Amazon_Fashion.jsonl'
 BATCH_SIZE = 5000
+QUEUE_SIZE = 1000
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Progress tracking
+progress_lock = threading.Lock()
+processed_items = 0
+total_items = 0
+
+def count_total_lines(file_path):
+    """Count total lines in a file (approximates total items)."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return sum(1 for _ in f)
 
 class ChromaEmbeddingFunction:
     """Embedding function for ChromaDB using SentenceTransformers on GPU."""
@@ -125,132 +144,131 @@ def read_meta(batch_size=BATCH_SIZE):
         if batch_docs:
             yield batch_docs, batch_products
 
-class ChromaDBPopulator:
-    """Handles GPU-optimized population of ChromaDB collections using pipelined processing."""
+def producer_reviews(job_queue):
+    """Producer thread: reads review batches and puts them into the job queue."""
+    for docs, reviews in read_reviews():
+        job_queue.put(('review', docs, reviews))
+    logger.info("Producer-Reviews: Finished reading reviews")
 
-    def __init__(self, product_meta_col, product_review_col):
-        self.product_meta_col = product_meta_col
-        self.product_review_col = product_review_col
-        self.job_queue = queue.Queue(maxsize=20)
-        self.insert_queue_reviews = queue.Queue(maxsize=20)
-        self.insert_queue_meta = queue.Queue(maxsize=20)
-        self.batch_group_size = 10
+def producer_meta(job_queue):
+    """Producer thread: reads meta batches and puts them into the job queue."""
+    for docs, products in read_meta():
+        job_queue.put(('meta', docs, products))
+    logger.info("Producer-Meta: Finished reading meta")
 
-    def populate(self):
-        """Run the pipelined population process."""
-        logger.info("Starting ChromaDB population with GPU optimization")
+def encoder(job_queue, insert_queue_reviews, insert_queue_meta):
+    """Encoder thread: gets batches from job_queue, encodes them individually, and puts into insert queues."""
+    while True:
+        item = job_queue.get()
+        if item is None:
+            logger.info("Encoder: Stopping")
+            insert_queue_reviews.put(None)
+            insert_queue_meta.put(None)
+            return
+        batch_type, docs, data = item
+        logger.info(f"Encoding {len(docs)} documents")
+        print(f"GPU now processing batch of {len(docs)} items")
+        embeddings = embedding_function(docs)
+        print(f"GPU processed batch, embeddings generated for {len(docs)} items")
+        logger.info(f"Encoded {len(docs)} documents")
+        if batch_type == 'review':
+            # Prepare metadatas for reviews
+            metadatas = [{"parent_asin": r['parent_asin']} for r in data]
+            # Prepare ids for reviews
+            ids = [f"review_{r['parent_asin']}_{uuid.uuid4()}" for r in data]
+            # Put into reviews insert queue
+            insert_queue_reviews.put((docs, metadatas, ids, embeddings))
+        else:
+            # Prepare metadatas for meta
+            metadatas = [{"parent_asin": p['parent_asin'], "average_rating": p.get('average_rating')} for p in data]
+            # Prepare ids for meta
+            ids = [f"meta_{p['parent_asin']}_{uuid.uuid4()}" for p in data]
+            # Put into meta insert queue
+            insert_queue_meta.put((docs, metadatas, ids, embeddings))
 
-        # Start threads
-        threads = [
-            threading.Thread(target=self._producer_reviews),
-            threading.Thread(target=self._producer_meta),
-            threading.Thread(target=self._encoder),
-            threading.Thread(target=self._inserter_reviews),
-            threading.Thread(target=self._inserter_meta)
-        ]
+def inserter_reviews(insert_queue, collection):
+    """Inserter thread for reviews: gets from insert_queue and upserts into collection."""
+    while True:
+        item = insert_queue.get()
+        if item is None:
+            return
+        docs, metadatas, ids, embeddings = item
+        collection.upsert(
+            documents=docs,
+            metadatas=metadatas,
+            ids=ids,
+            embeddings=embeddings
+        )
+        logger.info(f"Inserted review batch of {len(docs)} items")
+        with progress_lock:
+            global processed_items
+            processed_items += len(docs)
+            print(f"Progress: {processed_items}/{total_items} items processed", end='\r')
 
-        for t in threads:
-            t.start()
-
-        # Wait for producers
-        threads[0].join()  # reviews
-        threads[1].join()  # meta
-
-        # Signal encoder
-        self.job_queue.put(None)
-
-        # Wait for remaining
-        for t in threads[2:]:
-            t.join()
-
-        logger.info("ChromaDB population completed")
-
-    def _producer_reviews(self):
-        """Producer thread: reads review batches."""
-        for batch_docs, batch_reviews in read_reviews():
-            self.job_queue.put(('review', batch_docs, batch_reviews))
-        logger.info("Producer-Reviews: Finished reading reviews")
-
-    def _producer_meta(self):
-        """Producer thread: reads meta batches."""
-        for batch_docs, batch_products in read_meta():
-            self.job_queue.put(('meta', batch_docs, batch_products))
-        logger.info("Producer-Meta: Finished reading meta")
-
-    def _encoder(self):
-        """Encoder thread: processes batches and encodes."""
-        while True:
-            collected_batches = []
-            all_docs = []
-            for _ in range(self.batch_group_size):
-                item = self.job_queue.get()
-                if item is None:
-                    if collected_batches:
-                        self._encode_and_queue_group(collected_batches, all_docs)
-                    logger.info("Encoder: Stopping")
-                    self.insert_queue_reviews.put(None)
-                    self.insert_queue_meta.put(None)
-                    return
-                collected_batches.append(item)
-                all_docs.extend(item[1])
-
-            self._encode_and_queue_group(collected_batches, all_docs)
-
-    def _encode_and_queue_group(self, collected_batches, all_docs):
-        """Encode group and queue for insertion."""
-        logger.info(f"Encoding {len(all_docs)} documents")
-        all_embeddings = embedding_function(all_docs)
-        logger.info(f"Encoded {len(all_docs)} documents")
-
-        offset = 0
-        for batch_type, batch_docs, batch_data in collected_batches:
-            embeddings = all_embeddings[offset:offset + len(batch_docs)]
-            if batch_type == 'review':
-                metadatas = [{"parent_asin": r['parent_asin']} for r in batch_data]
-                ids = [f"review_{r['parent_asin']}_{uuid.uuid4()}" for r in batch_data]
-                queue = self.insert_queue_reviews
-            else:
-                metadatas = [{"parent_asin": p['parent_asin'], "average_rating": p.get('average_rating')} for p in batch_data]
-                ids = [f"meta_{p['parent_asin']}_{uuid.uuid4()}" for p in batch_data]
-                queue = self.insert_queue_meta
-            queue.put((batch_docs, metadatas, ids, embeddings))
-            offset += len(batch_docs)
-
-    def _inserter_reviews(self):
-        """Inserter thread for reviews."""
-        while True:
-            item = self.insert_queue_reviews.get()
-            if item is None:
-                return
-            batch_docs, metadatas, ids, embeddings = item
-            self.product_review_col.upsert(
-                documents=batch_docs,
-                metadatas=metadatas,
-                ids=ids,
-                embeddings=embeddings
-            )
-            logger.info(f"Inserted review batch of {len(batch_docs)} items")
-
-    def _inserter_meta(self):
-        """Inserter thread for meta."""
-        while True:
-            item = self.insert_queue_meta.get()
-            if item is None:
-                return
-            batch_docs, metadatas, ids, embeddings = item
-            self.product_meta_col.upsert(
-                documents=batch_docs,
-                metadatas=metadatas,
-                ids=ids,
-                embeddings=embeddings
-            )
-            logger.info(f"Inserted meta batch of {len(batch_docs)} items")
-
+def inserter_meta(insert_queue, collection):
+    """Inserter thread for meta: gets from insert_queue and upserts into collection."""
+    while True:
+        item = insert_queue.get()
+        if item is None:
+            return
+        docs, metadatas, ids, embeddings = item
+        collection.upsert(
+            documents=docs,
+            metadatas=metadatas,
+            ids=ids,
+            embeddings=embeddings
+        )
+        logger.info(f"Inserted meta batch of {len(docs)} items")
+        with progress_lock:
+            global processed_items
+            processed_items += len(docs)
+            print(f"Progress: {processed_items}/{total_items} items processed", end='\r')
 
 def populate_chroma_db(product_meta_col, product_review_col):
-    """Wrapper function for backward compatibility."""
-    populator = ChromaDBPopulator(product_meta_col, product_review_col)
-    populator.populate()
+    """Run the pipelined population process for ChromaDB."""
+    logger.info("Starting ChromaDB population with GPU optimization")
+
+    # Initialize progress tracking
+    global processed_items, total_items
+    processed_items = 0
+    total_reviews = count_total_lines(DATASET_REVIEW_FILE)
+    total_meta = count_total_lines(DATASET_META_FILE)
+    total_items = total_reviews + total_meta
+    print(f"Total lines to process: {total_items}")
+
+    # Create queues
+    job_queue = queue.Queue(maxsize=QUEUE_SIZE)
+    insert_queue_reviews = queue.Queue(maxsize=QUEUE_SIZE)
+    insert_queue_meta = queue.Queue(maxsize=QUEUE_SIZE)
+
+    # Number of encoder threads (configurable for GPU saturation)
+    num_encoders = 50
+
+    # Start threads for producers, encoders, and inserters
+    encoder_threads = [threading.Thread(target=encoder, args=(job_queue, insert_queue_reviews, insert_queue_meta)) for _ in range(num_encoders)]
+    threads = [
+        threading.Thread(target=producer_reviews, args=(job_queue,)),
+        threading.Thread(target=producer_meta, args=(job_queue,)),
+        threading.Thread(target=inserter_reviews, args=(insert_queue_reviews, product_review_col)),
+        threading.Thread(target=inserter_meta, args=(insert_queue_meta, product_meta_col))
+    ] + encoder_threads
+
+    for t in threads:
+        t.start()
+
+    # Wait for producers to finish
+    threads[0].join()  # reviews producer
+    threads[1].join()  # meta producer
+
+    # Signal encoders to stop: put None for each encoder
+    for _ in range(num_encoders):
+        job_queue.put(None)
+
+    # Wait for encoders and inserters
+    for t in threads[2:]:
+        t.join()
+
+    logger.info("ChromaDB population completed")
 
 if __name__ == "__main__":
     client, product_meta_col, product_review_col, parent_asin_to_title = create_chroma_collections()
